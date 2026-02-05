@@ -1,0 +1,110 @@
+version: "3.8"
+
+services:
+  db:
+    image: mysql:5.7
+    platform: linux/amd64
+    restart: unless-stopped
+    env_file: .env.prod
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD}
+    volumes:
+      - db_data:/var/lib/mysql
+      - ./docker/db-init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+
+  demo-hub:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    ports:
+      - "80:80"
+
+  farrier:
+    image: php:7.4-apache
+    restart: unless-stopped
+    depends_on:
+      - db
+    env_file: .env.prod
+    environment:
+      DB_HOST: db
+      DB_NAME: farrier_db
+      DB_USER: ${FARRIER_DB_USER}
+      DB_PASS: ${FARRIER_DB_PASS}
+    volumes:
+      - ../farrier_system:/var/www/html
+      - ./docker/apache-vhost.conf:/etc/apache2/sites-available/000-default.conf:ro
+    ports:
+      - "8083:80"
+    command: /bin/bash -c "a2enmod rewrite && docker-php-ext-install mysqli pdo_mysql && apache2-foreground"
+
+  vaccine_v1:
+    image: php:7.4-apache
+    restart: unless-stopped
+    depends_on:
+      - db
+    env_file: .env.prod
+    environment:
+      DB_HOST: db
+      DB_NAME: vaccine_db
+      DB_USER: ${VACCINE_DB_USER}
+      DB_PASS: ${VACCINE_DB_PASS}
+    volumes:
+      - ../vaccine_app_phase1:/var/www/html
+      - ./docker/vaccine_db_config.php:/var/www/html/app/config/database.php:ro
+      - ./docker/vaccine_db_config.php:/var/www/html/config/database.php:ro
+      - ./docker/apache-vhost.conf:/etc/apache2/sites-available/000-default.conf:ro
+    ports:
+      - "8084:80"
+    command: /bin/bash -c "a2enmod rewrite && docker-php-ext-install mysqli pdo_mysql && apache2-foreground"
+
+  local_zaiko:
+    image: node:18
+    working_dir: /app
+    env_file: .env.prod
+    volumes:
+      - ../local_zaiko:/app
+    command: sh -c "npm install && npm run dev -- -p 8080"
+    ports:
+      - "8080:8080"
+
+  multilingual_report:
+    image: node:18
+    working_dir: /app
+    env_file: .env.prod
+    volumes:
+      - ../MultilingualReportApp/frontend:/app
+    command: sh -c "npm install && npm run dev -- -p 3001"
+    ports:
+      - "3001:3001"
+
+  vet_stt:
+    image: node:18
+    working_dir: /app
+    env_file: .env.prod
+    volumes:
+      - ../AI_Vet_STT/Frontend:/app
+    command: sh -c "npm install && npm run dev -- -p 3000"
+    ports:
+      - "3000:3000"
+
+  woodshop:
+    image: node:20
+    working_dir: /app
+    env_file: .env.prod
+    volumes:
+      - ../woodshop-inventory:/app
+    command: sh -c "npm install && npm run dev --workspace=apps/api -- --port 3003 --ip 0.0.0.0"
+    ports:
+      - "3003:3003"
+
+  woodshop_web:
+    image: nginx:alpine
+    restart: unless-stopped
+    ports:
+      - "3002:80"
+    volumes:
+      - ../woodshop-inventory/apps/web:/usr/share/nginx/html:ro
+
+volumes:
+  db_data:

@@ -1,0 +1,103 @@
+version: "3.8"
+
+services:
+  # === 共有データベース ===
+  db:
+    image: mysql:5.7
+    platform: linux/amd64
+    restart: unless-stopped
+    environment:
+      MYSQL_ROOT_PASSWORD: root
+    volumes:
+      - db_data:/var/lib/mysql
+      - ./docker/db-init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+    ports:
+      - "3306:3306"
+
+  # === ポータルサイト (Demo Hub) ===
+  demo-hub:
+    image: nginx:alpine
+    ports:
+      - "8000:80"
+    volumes:
+      - ./index.html:/usr/share/nginx/html/index.html:ro
+      - ./style.css:/usr/share/nginx/html/style.css:ro
+
+  # === PHP Apps (Apache) ===
+  farrier:
+    image: php:7.4-apache
+    restart: unless-stopped
+    depends_on:
+      - db
+    environment:
+      DB_HOST: db
+      DB_NAME: farrier_db
+      DB_USER: root
+      DB_PASS: root
+    volumes:
+      - ../farrier_system:/var/www/html
+      - ./docker/apache-vhost.conf:/etc/apache2/sites-available/000-default.conf:ro
+    ports:
+      - "8083:80"
+    command: /bin/bash -c "a2enmod rewrite && docker-php-ext-install mysqli pdo_mysql && apache2-foreground"
+
+  vaccine_v1:
+    image: php:7.4-apache
+    restart: unless-stopped
+    depends_on:
+      - db
+    volumes:
+      - ../vaccine_app_phase1:/var/www/html
+      - ./docker/vaccine_db_config.php:/var/www/html/app/config/database.php:ro
+      - ./docker/vaccine_db_config.php:/var/www/html/config/database.php:ro
+      - ./docker/apache-vhost.conf:/etc/apache2/sites-available/000-default.conf:ro
+    ports:
+      - "8084:80"
+    command: /bin/bash -c "a2enmod rewrite && docker-php-ext-install mysqli pdo_mysql && apache2-foreground"
+
+  # === Node.js Apps (Next.js / Workers) ===
+  local_zaiko:
+    image: node:18
+    working_dir: /app
+    volumes:
+      - ../local_zaiko:/app
+    command: sh -c "npm install && npm run dev -- -p 8080"
+    ports:
+      - "8080:8080"
+
+  multilingual_report:
+    image: node:18
+    working_dir: /app
+    volumes:
+      - ../MultilingualReportApp/frontend:/app
+    command: sh -c "npm install && npm run dev -- -p 3001"
+    ports:
+      - "3001:3001"
+
+  vet_stt:
+    image: node:18
+    working_dir: /app
+    volumes:
+      - ../AI_Vet_STT/Frontend:/app
+    command: sh -c "npm install && npm run dev -- -p 3000"
+    ports:
+      - "3000:3000"
+
+  woodshop:
+    image: node:20
+    working_dir: /app
+    volumes:
+      - ../woodshop-inventory:/app
+    command: sh -c "npm install && npm run dev --workspace=apps/api -- --port 3003 --ip 0.0.0.0"
+    ports:
+      - "3003:3003"
+
+  woodshop_web:
+    image: nginx:alpine
+    ports:
+      - "3002:80"
+    volumes:
+      - ../woodshop-inventory/apps/web:/usr/share/nginx/html:ro
+
+volumes:
+  db_data:
