@@ -1,0 +1,50 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Hamagiku Farm — Website Concepts</title>
+<meta name="theme-color" content="#0b1712">
+<style>
+*{box-sizing:border-box}html,body{margin:0;min-height:100%;background:#0b1712;color:#f6f1e7;font-family:-apple-system,BlinkMacSystemFont,"Helvetica Neue","Hiragino Kaku Gothic ProN","Yu Gothic",sans-serif}body{display:grid;place-items:center;min-height:100dvh;padding:24px}.box{width:min(620px,100%);text-align:center}.mark{width:52px;height:52px;border:1px solid rgba(255,255,255,.38);border-radius:50%;display:grid;place-items:center;margin:0 auto 22px;font:700 12px/1 Georgia,serif;letter-spacing:.12em}.eyebrow{font-size:11px;letter-spacing:.22em;text-transform:uppercase;opacity:.62;margin-bottom:14px}h1{font:500 clamp(32px,9vw,62px)/.98 Georgia,"Times New Roman",serif;letter-spacing:-.04em;margin:0 0 18px}.jp{font-size:14px;line-height:1.8;opacity:.72;margin:0 auto 28px;max-width:34em}.bar{height:2px;background:rgba(255,255,255,.14);overflow:hidden;margin:0 auto 13px;border-radius:9px}.bar>i{display:block;width:10%;height:100%;background:#e4df62;transition:width .25s ease}.status{font-size:11px;letter-spacing:.08em;opacity:.55}.error{display:none;margin-top:20px;padding:14px;border:1px solid rgba(255,255,255,.18);font-size:13px;line-height:1.6}.retry{display:none;margin:16px auto 0;padding:10px 16px;border:1px solid rgba(255,255,255,.45);color:inherit;background:transparent;border-radius:999px;font:inherit}
+</style>
+<script src="https://cdn.jsdelivr.net/npm/pako@2.1.0/dist/pako.min.js"></script>
+</head>
+<body>
+<main class="box">
+<div class="mark">HF</div>
+<div class="eyebrow">Client Preview · 3 Concepts</div>
+<h1>Hamagiku Farm</h1>
+<p class="jp">3つのWebサイト案を読み込んでいます。<br>読み込み後、QUIET / EDITORIAL / MOTION を切り替えて比較できます。</p>
+<div class="bar"><i id="p"></i></div>
+<div class="status" id="s">PREPARING · 0%</div>
+<div class="error" id="e">読み込みに失敗しました。通信環境を確認して再度お試しください。</div>
+<button class="retry" id="r" type="button">再読み込み</button>
+</main>
+<script>
+(async()=>{
+ const p=document.getElementById('p'),s=document.getElementById('s'),e=document.getElementById('e'),r=document.getElementById('r');
+ const set=(n,t)=>{p.style.width=n+'%';s.textContent=t+' · '+n+'%'};
+ try{
+   set(5,'CONNECTING');
+   const urls=['chunk1.txt','chunk2.txt','chunk3.txt','chunk4.txt'];
+   let parts=[];
+   for(let i=0;i<urls.length;i++){
+     const res=await fetch(urls[i]+'?v=20260903',{cache:'no-store'});
+     if(!res.ok) throw new Error('HTTP '+res.status);
+     parts.push((await res.text()).trim());
+     set(15+(i+1)*15,'LOADING');
+   }
+   set(82,'BUILDING');
+   const b64=parts.join('');
+   const bin=atob(b64); const bytes=new Uint8Array(bin.length);
+   for(let i=0;i<bin.length;i++) bytes[i]=bin.charCodeAt(i);
+   if(!window.pako) throw new Error('Decoder unavailable');
+   const html=new TextDecoder('utf-8').decode(window.pako.ungzip(bytes));
+   set(100,'READY');
+   setTimeout(()=>{document.open();document.write(html);document.close();},120);
+ }catch(err){console.error(err);e.style.display='block';r.style.display='block';s.textContent='LOAD ERROR';p.style.width='100%';r.onclick=()=>location.reload();}
+})();
+</script>
+</body>
+</html>
