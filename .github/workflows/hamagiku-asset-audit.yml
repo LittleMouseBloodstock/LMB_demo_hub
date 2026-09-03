@@ -1,0 +1,175 @@
+name: Hamagiku asset audit
+
+on:
+  push:
+    branches: [gh-pages]
+    paths:
+      - '.github/workflows/hamagiku-asset-audit.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  audit-and-fix:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: gh-pages
+          fetch-depth: 0
+
+      - name: Audit and repair Hamagiku demo
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          from html.parser import HTMLParser
+          from urllib.request import Request, urlopen
+          from urllib.error import URLError, HTTPError
+          from urllib.parse import urlsplit
+          import re, datetime, html as htmlmod
+
+          root = Path('hamagiku-demo')
+          html_files = sorted(root.rglob('*.html'))
+          report = []
+          changed = []
+
+          # Known-good horse image used only when an external placeholder is unavailable.
+          fallback_photo = 'https://images.unsplash.com/photo-1553284965-83fd3e82fa5a?auto=format&fit=crop&w=1400&q=84'
+          # This ID could not be independently verified and appeared repeatedly where images were missing.
+          suspect_id = 'photo-1534773728080-33d31da27ae5'
+          replacement_id = 'photo-1551884831-bbf3cdc6469e'
+
+          class RefParser(HTMLParser):
+              def __init__(self):
+                  super().__init__()
+                  self.refs=[]
+                  self.scripts=[]
+                  self._script=False
+                  self._buf=[]
+              def handle_starttag(self, tag, attrs):
+                  d=dict(attrs)
+                  for k in ('src','href'):
+                      if k in d: self.refs.append((tag,k,d[k]))
+                  if tag=='script' and not d.get('src'):
+                      self._script=True; self._buf=[]
+              def handle_data(self,data):
+                  if self._script: self._buf.append(data)
+              def handle_endtag(self,tag):
+                  if tag=='script' and self._script:
+                      self.scripts.append(''.join(self._buf)); self._script=False
+
+          def probe(url):
+              req=Request(url, headers={'User-Agent':'Mozilla/5.0 HamagikuAudit/1.0','Range':'bytes=0-128'})
+              try:
+                  with urlopen(req, timeout=20) as r:
+                      ctype=(r.headers.get('Content-Type') or '').lower()
+                      return r.status, ctype
+              except HTTPError as e:
+                  return e.code, ''
+              except Exception as e:
+                  return None, type(e).__name__
+
+          external_images=set()
+          local_missing=[]
+          js_dir=Path('.audit-js'); js_dir.mkdir(exist_ok=True)
+          js_count=0
+
+          for p in html_files:
+              s=p.read_text(encoding='utf-8')
+              orig=s
+              # Normalize all brand references to the verified assets and bust old browser caches.
+              s=s.replace('hamagiku-jp.svg', 'hamagiku-jp-v2.svg?v=1')
+              s=re.sub(r'hamagiku-logo\.svg(?!\?)', 'hamagiku-logo.svg?v=4', s)
+              s=re.sub(r'hamagiku-symbol\.webp(?!\?)', 'hamagiku-symbol.webp?v=4', s)
+              # Replace the repeatedly failing/unverified placeholder photo ID.
+              s=s.replace(suspect_id, replacement_id)
+              # De-duplicate accidental query suffixes from iterative edits.
+              s=s.replace('?v=4?v=4','?v=4').replace('?v=1?v=1','?v=1')
+              if s != orig:
+                  p.write_text(s, encoding='utf-8')
+                  changed.append(str(p))
+
+              parser=RefParser(); parser.feed(s)
+              for idx,js in enumerate(parser.scripts):
+                  if js.strip():
+                      out=js_dir/(str(p).replace('/','__')+f'__{idx}.js')
+                      out.write_text(js,encoding='utf-8'); js_count+=1
+              for tag,key,ref in parser.refs:
+                  ref=htmlmod.unescape(ref).strip()
+                  if not ref or ref.startswith(('#','mailto:','tel:','data:','javascript:')): continue
+                  if ref.startswith(('http://','https://')):
+                      if tag=='img' and ref.startswith('https://images.unsplash.com/'): external_images.add(ref)
+                      continue
+                  clean=ref.split('#',1)[0].split('?',1)[0]
+                  if not clean: continue
+                  target=(p.parent/clean).resolve()
+                  try: target.relative_to(Path.cwd().resolve())
+                  except ValueError:
+                      local_missing.append((str(p),ref,'escapes repo')); continue
+                  if not target.exists(): local_missing.append((str(p),ref,'missing'))
+
+          if local_missing:
+              report.append('LOCAL REF ERRORS:')
+              report += [f'  {a} -> {b} ({c})' for a,b,c in local_missing]
+          else:
+              report.append('LOCAL REFS: PASS')
+
+          report.append(f'HTML FILES: {len(html_files)}')
+          report.append(f'INLINE JS BLOCKS: {js_count}')
+          report.append(f'EXTERNAL UNSPLASH URLS: {len(external_images)}')
+
+          # Probe each unique external photo. Replace unavailable ones everywhere.
+          bad=[]
+          for u in sorted(external_images):
+              status,ctype=probe(u)
+              ok=status is not None and 200 <= status < 400 and ('image/' in ctype or ctype=='')
+              report.append(f'PHOTO {status} {ctype}: {u}')
+              if not ok: bad.append(u)
+          if bad:
+              for p in html_files:
+                  s=p.read_text(encoding='utf-8'); orig=s
+                  for u in bad: s=s.replace(u,fallback_photo)
+                  if s!=orig:
+                      p.write_text(s,encoding='utf-8')
+                      if str(p) not in changed: changed.append(str(p))
+              report.append(f'REPAIRED EXTERNAL PHOTOS: {len(bad)}')
+          else:
+              report.append('EXTERNAL PHOTOS: PASS')
+
+          # Check Google Fonts endpoints but do not fail the site: system fallbacks are defined.
+          font_urls=set()
+          for p in html_files:
+              for m in re.findall(r'https://fonts\.googleapis\.com/[^"\']+', p.read_text(encoding='utf-8')):
+                  font_urls.add(htmlmod.unescape(m))
+          for u in sorted(font_urls):
+              status,ctype=probe(u)
+              report.append(f'FONT {status} {ctype}: {u}')
+
+          report.append('CHANGED FILES: ' + (', '.join(changed) if changed else 'none'))
+          report.append('AUDIT UTC: '+datetime.datetime.now(datetime.timezone.utc).isoformat())
+          (root/'AUDIT.txt').write_text('\n'.join(report)+'\n',encoding='utf-8')
+
+          if local_missing:
+              raise SystemExit('Broken local references remain; see AUDIT.txt')
+          PY
+
+      - name: Check JavaScript syntax
+        run: |
+          set -e
+          for f in .audit-js/*.js; do
+            [ -e "$f" ] || continue
+            node --check "$f"
+          done
+          rm -rf .audit-js
+
+      - name: Commit repaired demo
+        run: |
+          git config user.name "Hamagiku Audit Bot"
+          git config user.email "actions@users.noreply.github.com"
+          git add hamagiku-demo
+          if git diff --cached --quiet; then
+            echo "No content changes needed"
+          else
+            git commit -m "Complete Hamagiku asset audit [skip ci]"
+            git push origin HEAD:gh-pages
+          fi
