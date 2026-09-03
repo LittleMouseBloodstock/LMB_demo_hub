@@ -1,0 +1,24 @@
+LOCAL REFS: PASS
+HTML FILES: 5
+INLINE JS BLOCKS: 5
+EXTERNAL UNSPLASH URLS: 13
+PHOTO 206 image/jpeg: https://images.unsplash.com/photo-1547581849-38ba650ad0de?auto=format&fit=crop&w=1800&q=86
+PHOTO 206 image/jpeg: https://images.unsplash.com/photo-1551884831-bbf3cdc6469e?auto=format&fit=crop&w=1000&q=84
+PHOTO 206 image/jpeg: https://images.unsplash.com/photo-1551884831-bbf3cdc6469e?auto=format&fit=crop&w=1100&q=84
+PHOTO 206 image/jpeg: https://images.unsplash.com/photo-1551884831-bbf3cdc6469e?auto=format&fit=crop&w=1400&q=84
+PHOTO 206 image/jpeg: https://images.unsplash.com/photo-1551884831-bbf3cdc6469e?auto=format&fit=crop&w=1400&q=86
+PHOTO 206 image/jpeg: https://images.unsplash.com/photo-1551884831-bbf3cdc6469e?auto=format&fit=crop&w=1600&q=86
+PHOTO 206 image/jpeg: https://images.unsplash.com/photo-1553284965-83fd3e82fa5a?auto=format&fit=crop&w=1000&q=84
+PHOTO 206 image/jpeg: https://images.unsplash.com/photo-1553284965-83fd3e82fa5a?auto=format&fit=crop&w=1100&q=84
+PHOTO 206 image/jpeg: https://images.unsplash.com/photo-1553284965-83fd3e82fa5a?auto=format&fit=crop&w=1400&q=84
+PHOTO 206 image/jpeg: https://images.unsplash.com/photo-1553284965-83fd3e82fa5a?auto=format&fit=crop&w=1400&q=86
+PHOTO 206 image/jpeg: https://images.unsplash.com/photo-1553284965-83fd3e82fa5a?auto=format&fit=crop&w=1800&q=88
+PHOTO 206 image/jpeg: https://images.unsplash.com/photo-1598974357801-cbca100e65d3?auto=format&fit=crop&w=1000&q=84
+PHOTO 206 image/jpeg: https://images.unsplash.com/photo-1598974357801-cbca100e65d3?auto=format&fit=crop&w=1400&q=84
+EXTERNAL PHOTOS: PASS
+FONT 200 text/css; charset=utf-8: https://fonts.googleapis.com/css2?family=Archivo+Black&family=LINE+Seed+JP:wght@400;700;800&family=Manrope:wght@400;500;600;700&display=swap
+FONT 200 text/css; charset=utf-8: https://fonts.googleapis.com/css2?family=Archivo+Black&family=LINE+Seed+JP:wght@400;700;800&family=Manrope:wght@400;600;800&display=swap
+FONT 200 text/css; charset=utf-8: https://fonts.googleapis.com/css2?family=Archivo+Black&family=Manrope:wght@400;500;600;700&display=swap
+FONT 200 text/css; charset=utf-8: https://fonts.googleapis.com/css2?family=LINE+Seed+JP:wght@400;700;800&family=Manrope:wght@400;500;600;700&display=swap
+CHANGED FILES: hamagiku-demo/concept-b/index.html, hamagiku-demo/concept-c/index.html
+AUDIT UTC: 2026-09-03T10:29:04.223443+00:00
