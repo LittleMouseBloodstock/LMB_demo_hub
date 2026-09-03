@@ -1,0 +1,1 @@
+Hamagiku Farm brand assets are sourced from the official logo artwork supplied by the client.
