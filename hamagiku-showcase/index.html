@@ -25,19 +25,20 @@
 (async()=>{
  const p=document.getElementById('p'),s=document.getElementById('s'),e=document.getElementById('e'),r=document.getElementById('r');
  const set=(n,t)=>{p.style.width=n+'%';s.textContent=t+' · '+n+'%'};
+ const base='https://raw.githubusercontent.com/LittleMouseBloodstock/LMB_demo_hub/9aa6eef5994c8c5d97936ec0639da27bf7aa9eb4/hamagiku-showcase/';
  try{
    set(5,'CONNECTING');
    const urls=['chunk1.txt','chunk2.txt','chunk3.txt','chunk4.txt'];
-   let parts=[];
+   const parts=[];
    for(let i=0;i<urls.length;i++){
-     const res=await fetch(urls[i]+'?v=20260903',{cache:'no-store'});
+     const res=await fetch(base+urls[i],{cache:'no-store'});
      if(!res.ok) throw new Error('HTTP '+res.status);
      parts.push((await res.text()).trim());
      set(15+(i+1)*15,'LOADING');
    }
    set(82,'BUILDING');
    const b64=parts.join('');
-   const bin=atob(b64); const bytes=new Uint8Array(bin.length);
+   const bin=atob(b64),bytes=new Uint8Array(bin.length);
    for(let i=0;i<bin.length;i++) bytes[i]=bin.charCodeAt(i);
    if(!window.pako) throw new Error('Decoder unavailable');
    const html=new TextDecoder('utf-8').decode(window.pako.ungzip(bytes));
