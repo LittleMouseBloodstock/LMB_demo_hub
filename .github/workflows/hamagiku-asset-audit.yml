@@ -1,4 +1,4 @@
-name: Hamagiku asset audit
+name: Hamagiku deep audit
 
 on:
   push:
@@ -18,7 +18,7 @@ jobs:
           ref: gh-pages
           fetch-depth: 0
 
-      - name: Audit and repair Hamagiku demo
+      - name: Deep audit and repair Hamagiku demo
         run: |
           python3 - <<'PY'
           from pathlib import Path
@@ -27,114 +27,159 @@ jobs:
           from urllib.error import HTTPError
           import re, datetime, html as htmlmod
 
-          root = Path('hamagiku-demo')
-          html_files = sorted(root.rglob('*.html'))
-          report = []
-          changed = []
-          fallback_photo = 'https://images.unsplash.com/photo-1553284965-83fd3e82fa5a?auto=format&fit=crop&w=1400&q=84'
-          suspect_id = 'photo-1534773728080-33d31da27ae5'
-          replacement_id = 'photo-1551884831-bbf3cdc6469e'
+          root=Path('hamagiku-demo')
+          showcase=Path('hamagiku-showcase')
+          report=[]
+          changed=[]
+          deleted=[]
 
-          class RefParser(HTMLParser):
-              def __init__(self):
-                  super().__init__(); self.refs=[]; self.scripts=[]; self._script=False; self._buf=[]
-              def handle_starttag(self, tag, attrs):
-                  d=dict(attrs)
-                  for k in ('src','href'):
-                      if k in d: self.refs.append((tag,k,d[k]))
-                  if tag=='script' and not d.get('src'): self._script=True; self._buf=[]
-              def handle_data(self,data):
-                  if self._script: self._buf.append(data)
-              def handle_endtag(self,tag):
-                  if tag=='script' and self._script:
-                      self.scripts.append(''.join(self._buf)); self._script=False
+          # Remove superseded/unreferenced artifacts from early prototypes.
+          legacy=[
+            root/'assets/hamagiku-jp-inline.svg',
+            root/'assets/hamagiku-jp.svg',
+            root/'raw/part01.txt',
+            showcase/'chunk1.txt', showcase/'chunk2.txt', showcase/'chunk3.txt', showcase/'chunk4.txt',
+          ]
+          live_text='\n'.join(p.read_text(encoding='utf-8',errors='ignore') for p in list(root.rglob('*.html'))+list(showcase.rglob('*.html')))
+          for p in legacy:
+            if p.exists() and p.name not in live_text:
+              p.unlink(); deleted.append(str(p))
+
+          # Hub links must carry the chosen language into each concept.
+          hub_ja=root/'index.html'
+          s=hub_ja.read_text(encoding='utf-8'); orig=s
+          for c in ('a','b','c'):
+            s=s.replace(f'concept-{c}/index.html"',f'concept-{c}/index.html?lang=ja"')
+          if s!=orig: hub_ja.write_text(s,encoding='utf-8'); changed.append(str(hub_ja))
+
+          hub_en=root/'index-en.html'
+          s=hub_en.read_text(encoding='utf-8'); orig=s
+          for c in ('a','b','c'):
+            s=s.replace(f'concept-{c}/index.html"',f'concept-{c}/index.html?lang=en"')
+          if s!=orig: hub_en.write_text(s,encoding='utf-8'); changed.append(str(hub_en))
+
+          simple_old="const set=l=>{document.body.dataset.lang=l;document.documentElement.lang=l;document.querySelectorAll('[data-l]').forEach(b=>b.classList.toggle('on',b.dataset.l===l))};document.querySelectorAll('[data-l]').forEach(b=>b.onclick=()=>set(b.dataset.l));set((navigator.language||'ja').toLowerCase().startsWith('ja')?'ja':'en');"
+          simple_new="const params=new URLSearchParams(location.search),requested=params.get('lang');let saved=null;try{saved=localStorage.getItem('hamagiku-lang')}catch(e){}const set=l=>{document.body.dataset.lang=l;document.documentElement.lang=l;document.querySelectorAll('[data-l]').forEach(b=>b.classList.toggle('on',b.dataset.l===l));try{localStorage.setItem('hamagiku-lang',l)}catch(e){}const back=document.querySelector('.back');if(back)back.href=l==='en'?'../index-en.html':'../index.html'};document.querySelectorAll('[data-l]').forEach(b=>b.onclick=()=>set(b.dataset.l));set((requested==='ja'||requested==='en')?requested:(saved||((navigator.language||'ja').toLowerCase().startsWith('ja')?'ja':'en')));"
+
+          for name in ('concept-a','concept-b'):
+            p=root/name/'index.html'
+            s=p.read_text(encoding='utf-8'); orig=s
+            if 'name="robots"' not in s:
+              s=s.replace('<title>', '<meta name="robots" content="noindex,nofollow"><title>', 1)
+            s=re.sub(r'<button(?![^>]*\btype=)', '<button type="button"', s)
+            s=s.replace(simple_old,simple_new)
+            if s!=orig: p.write_text(s,encoding='utf-8'); changed.append(str(p))
+
+          # Motion concept: remove reliance on browser-created global variables and unify language state.
+          p=root/'concept-c/index.html'
+          s=p.read_text(encoding='utf-8'); orig=s
+          if 'name="robots"' not in s:
+            s=s.replace('<title>', '<meta name="robots" content="noindex,nofollow"><title>', 1)
+          s=re.sub(r'<button(?![^>]*\btype=)', '<button type="button"', s)
+          s=s.replace('class="menuBtn" id="menuBtn">MENU</button>','class="menuBtn" id="menuBtn" aria-controls="menu" aria-expanded="false">MENU</button>')
+          s=s.replace('<div class="menu" id="menu">','<div class="menu" id="menu" aria-hidden="true">')
+          s=s.replace('<button type="button" id="closeBtn">CLOSE</button>','<button type="button" id="closeBtn" aria-label="Close menu">CLOSE</button>')
+          s=re.sub(r'<div class="row([^"]*)" data-i="([0-9]+)">', r'<div class="row\1" data-i="\2" role="button" tabindex="0">', s)
+
+          old_menu="const menu=document.getElementById('menu');menuBtn.onclick=()=>menu.classList.add('open');closeBtn.onclick=()=>menu.classList.remove('open');menu.querySelectorAll('a').forEach(a=>a.onclick=()=>menu.classList.remove('open'));"
+          new_menu="const menu=document.getElementById('menu'),menuBtn=document.getElementById('menuBtn'),closeBtn=document.getElementById('closeBtn');const openMenu=()=>{menu.classList.add('open');menu.setAttribute('aria-hidden','false');menuBtn.setAttribute('aria-expanded','true')},closeMenu=()=>{menu.classList.remove('open');menu.setAttribute('aria-hidden','true');menuBtn.setAttribute('aria-expanded','false')};menuBtn.onclick=openMenu;closeBtn.onclick=closeMenu;menu.querySelectorAll('a').forEach(a=>a.onclick=closeMenu);addEventListener('keydown',e=>{if(e.key==='Escape')closeMenu()});"
+          s=s.replace(old_menu,new_menu)
+
+          old_lang="function setLang(l){body.dataset.lang=l;document.documentElement.lang=l;document.querySelectorAll('[data-lang]').forEach(b=>b.classList.toggle('on',b.dataset.lang===l));try{localStorage.setItem('hamagiku-motion-lang',l)}catch(e){}}document.querySelectorAll('[data-lang]').forEach(b=>b.onclick=()=>setLang(b.dataset.lang));let sl=null;try{sl=localStorage.getItem('hamagiku-motion-lang')}catch(e){}setLang(sl||((navigator.language||'ja').toLowerCase().startsWith('ja')?'ja':'en'));"
+          new_lang="const params=new URLSearchParams(location.search),requested=params.get('lang');function setLang(l){body.dataset.lang=l;document.documentElement.lang=l;document.querySelectorAll('[data-lang]').forEach(b=>b.classList.toggle('on',b.dataset.lang===l));try{localStorage.setItem('hamagiku-lang',l)}catch(e){}const back=document.querySelector('.back');if(back)back.href=l==='en'?'../index-en.html':'../index.html'}document.querySelectorAll('[data-lang]').forEach(b=>b.onclick=()=>setLang(b.dataset.lang));let sl=null;try{sl=localStorage.getItem('hamagiku-lang')}catch(e){}setLang((requested==='ja'||requested==='en')?requested:(sl||((navigator.language||'ja').toLowerCase().startsWith('ja')?'ja':'en')));"
+          s=s.replace(old_lang,new_lang)
+
+          old_rows="r.addEventListener('mouseenter',a);r.addEventListener('click',a)"
+          new_rows="r.addEventListener('mouseenter',a);r.addEventListener('click',a);r.addEventListener('keydown',e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();a()}})"
+          s=s.replace(old_rows,new_rows)
+          if s!=orig: p.write_text(s,encoding='utf-8'); changed.append(str(p))
+
+          # The retired showcase should never be indexed.
+          p=showcase/'index.html'
+          s=p.read_text(encoding='utf-8'); orig=s
+          if 'name="robots"' not in s:
+            s=s.replace('<title>', '<meta name="robots" content="noindex,nofollow"><title>', 1)
+          if s!=orig: p.write_text(s,encoding='utf-8'); changed.append(str(p))
+
+          class Parser(HTMLParser):
+            def __init__(self):
+              super().__init__(); self.refs=[]; self.ids=[]; self.anchor_targets=[]; self.scripts=[]; self._script=False; self._buf=[]; self.buttons=[]
+            def handle_starttag(self,tag,attrs):
+              d=dict(attrs)
+              if d.get('id'): self.ids.append(d['id'])
+              if tag=='button': self.buttons.append(d)
+              for k in ('src','href'):
+                if k in d: self.refs.append((tag,k,d[k]))
+              if tag=='a' and d.get('href','').startswith('#') and len(d['href'])>1: self.anchor_targets.append(d['href'][1:])
+              if tag=='script' and not d.get('src'): self._script=True; self._buf=[]
+            def handle_data(self,data):
+              if self._script: self._buf.append(data)
+            def handle_endtag(self,tag):
+              if tag=='script' and self._script: self.scripts.append(''.join(self._buf)); self._script=False
 
           def probe(url):
-              req=Request(url, headers={'User-Agent':'Mozilla/5.0 HamagikuAudit/2.0','Range':'bytes=0-128'})
-              try:
-                  with urlopen(req, timeout=20) as r:
-                      return r.status, (r.headers.get('Content-Type') or '').lower()
-              except HTTPError as e: return e.code, ''
-              except Exception as e: return None, type(e).__name__
+            req=Request(url,headers={'User-Agent':'Mozilla/5.0 HamagikuDeepAudit/1.0','Range':'bytes=0-128'})
+            try:
+              with urlopen(req,timeout=20) as r: return r.status,(r.headers.get('Content-Type') or '').lower()
+            except HTTPError as e: return e.code,''
+            except Exception as e: return None,type(e).__name__
 
-          external_images=set(); local_missing=[]
-          js_dir=Path('.audit-js'); js_dir.mkdir(exist_ok=True); js_count=0
+          pages=sorted(root.rglob('*.html'))+[showcase/'index.html']
+          missing=[]; duplicate_ids=[]; bad_anchors=[]; buttons_without_type=[]; scripts=[]
+          for page in pages:
+            text=page.read_text(encoding='utf-8'); pr=Parser(); pr.feed(text)
+            dup=sorted({x for x in pr.ids if pr.ids.count(x)>1})
+            if dup: duplicate_ids.append((str(page),dup))
+            idset=set(pr.ids)
+            for a in pr.anchor_targets:
+              if a not in idset: bad_anchors.append((str(page),a))
+            for b in pr.buttons:
+              if 'type' not in b: buttons_without_type.append(str(page))
+            for idx,js in enumerate(pr.scripts):
+              if js.strip():
+                q=Path('.audit-js'); q.mkdir(exist_ok=True)
+                out=q/(str(page).replace('/','__')+f'__{idx}.js'); out.write_text(js,encoding='utf-8'); scripts.append(str(out))
+            for tag,key,ref in pr.refs:
+              ref=htmlmod.unescape(ref).strip()
+              if not ref or ref.startswith(('#','mailto:','tel:','data:','javascript:','http://','https://')): continue
+              clean=ref.split('#',1)[0].split('?',1)[0]
+              target=(page.parent/clean).resolve()
+              if not target.exists(): missing.append((str(page),ref))
 
-          for p in html_files:
-              s=p.read_text(encoding='utf-8'); orig=s
-              s=s.replace('hamagiku-jp.svg', 'hamagiku-jp-v2.svg?v=1')
-              s=re.sub(r'hamagiku-logo\.svg(?!\?)', 'hamagiku-logo.svg?v=4', s)
-              s=re.sub(r'hamagiku-symbol\.webp(?!\?)', 'hamagiku-symbol.webp?v=4', s)
-              s=s.replace(suspect_id, replacement_id)
-              s=s.replace('?v=4?v=4','?v=4').replace('?v=1?v=1','?v=1')
+          # Probe every Unsplash URL, including CSS background-image URLs.
+          all_text='\n'.join(p.read_text(encoding='utf-8') for p in sorted(root.rglob('*.html')))
+          urls=sorted(set(re.findall(r'https://images\.unsplash\.com/[^\s\'\")]+',all_text)))
+          bad_remote=[]
+          for u in urls:
+            status,ctype=probe(htmlmod.unescape(u))
+            report.append(f'PHOTO {status} {ctype}: {u}')
+            if status is None or not 200 <= status < 400 or ('image/' not in ctype and ctype!=''): bad_remote.append(u)
 
-              # Every page must fail gracefully if a remote photo temporarily cannot load.
-              if "dataset.fb='1'" not in s and 'document.querySelectorAll("img")' not in s:
-                  asset = 'assets/hamagiku-symbol.webp?v=4' if p.parent == root else '../assets/hamagiku-symbol.webp?v=4'
-                  fallback = ("<script>document.querySelectorAll('img').forEach(img=>img.addEventListener('error',()=>{"
-                              "if(img.dataset.fb)return;img.dataset.fb='1';img.src='"+asset+"';"
-                              "img.style.objectFit='contain';img.style.background='#fffdf7';img.style.padding='10px';"
-                              "img.style.transform='none';img.style.filter='none'}));</script>")
-                  s=s.replace('</body>', fallback+'</body>')
+          concept_pages=[root/f'concept-{c}'/'index.html' for c in ('a','b','c')]
+          noindex_ok=all('name="robots" content="noindex,nofollow"' in x.read_text(encoding='utf-8') for x in concept_pages)
+          lang_links_ok=all(f'concept-{c}/index.html?lang=ja' in hub_ja.read_text(encoding='utf-8') and f'concept-{c}/index.html?lang=en' in hub_en.read_text(encoding='utf-8') for c in ('a','b','c'))
+          ctext=(root/'concept-c/index.html').read_text(encoding='utf-8')
+          no_implicit_globals=('menuBtn.onclick' not in ctext or "document.getElementById('menuBtn')" in ctext) and ('closeBtn.onclick' not in ctext or "document.getElementById('closeBtn')" in ctext)
+          fallback_ok=sum("dataset.fb='1'" in x.read_text(encoding='utf-8') for x in sorted(root.rglob('*.html')))
 
-              if s != orig:
-                  p.write_text(s, encoding='utf-8'); changed.append(str(p))
-
-              parser=RefParser(); parser.feed(s)
-              for idx,js in enumerate(parser.scripts):
-                  if js.strip():
-                      (js_dir/(str(p).replace('/','__')+f'__{idx}.js')).write_text(js,encoding='utf-8'); js_count+=1
-              for tag,key,ref in parser.refs:
-                  ref=htmlmod.unescape(ref).strip()
-                  if not ref or ref.startswith(('#','mailto:','tel:','data:','javascript:')): continue
-                  if ref.startswith(('http://','https://')):
-                      if tag=='img' and ref.startswith('https://images.unsplash.com/'): external_images.add(ref)
-                      continue
-                  clean=ref.split('#',1)[0].split('?',1)[0]
-                  if not clean: continue
-                  target=(p.parent/clean).resolve()
-                  try: target.relative_to(Path.cwd().resolve())
-                  except ValueError:
-                      local_missing.append((str(p),ref,'escapes repo')); continue
-                  if not target.exists(): local_missing.append((str(p),ref,'missing'))
-
-          report.append('LOCAL REFS: PASS' if not local_missing else 'LOCAL REF ERRORS:')
-          if local_missing: report += [f'  {a} -> {b} ({c})' for a,b,c in local_missing]
-          report.append(f'HTML FILES: {len(html_files)}')
-          report.append(f'INLINE JS BLOCKS: {js_count}')
-          report.append(f'EXTERNAL UNSPLASH URLS: {len(external_images)}')
-
-          bad=[]
-          for u in sorted(external_images):
-              status,ctype=probe(u); ok=status is not None and 200 <= status < 400 and ('image/' in ctype or ctype=='')
-              report.append(f'PHOTO {status} {ctype}: {u}')
-              if not ok: bad.append(u)
-          if bad:
-              for p in html_files:
-                  s=p.read_text(encoding='utf-8'); orig=s
-                  for u in bad: s=s.replace(u,fallback_photo)
-                  if s!=orig:
-                      p.write_text(s,encoding='utf-8')
-                      if str(p) not in changed: changed.append(str(p))
-              report.append(f'REPAIRED EXTERNAL PHOTOS: {len(bad)}')
-          else: report.append('EXTERNAL PHOTOS: PASS')
-
-          font_urls=set()
-          for p in html_files:
-              for m in re.findall(r'https://fonts\.googleapis\.com/[^"\']+', p.read_text(encoding='utf-8')): font_urls.add(htmlmod.unescape(m))
-          for u in sorted(font_urls):
-              status,ctype=probe(u); report.append(f'FONT {status} {ctype}: {u}')
-
-          fallback_count=0
-          for p in html_files:
-              s=p.read_text(encoding='utf-8')
-              if "dataset.fb='1'" in s or 'document.querySelectorAll("img")' in s: fallback_count += 1
-          report.append(f'IMAGE FALLBACK PAGES: {fallback_count}/{len(html_files)}')
-          report.append('CHANGED FILES: ' + (', '.join(changed) if changed else 'none'))
+          report.insert(0,f'LOCAL REFS: {"PASS" if not missing else "FAIL"}')
+          report.insert(1,f'DUPLICATE IDS: {"PASS" if not duplicate_ids else "FAIL"}')
+          report.insert(2,f'ANCHOR TARGETS: {"PASS" if not bad_anchors else "FAIL"}')
+          report.insert(3,f'BUTTON TYPES: {"PASS" if not buttons_without_type else "FAIL"}')
+          report.insert(4,f'PREVIEW NOINDEX: {"PASS" if noindex_ok else "FAIL"}')
+          report.insert(5,f'LANGUAGE ROUTING: {"PASS" if lang_links_ok else "FAIL"}')
+          report.insert(6,f'CONCEPT C EXPLICIT CONTROLS: {"PASS" if no_implicit_globals else "FAIL"}')
+          report.insert(7,f'IMAGE FALLBACK PAGES: {fallback_ok}/5')
+          report.insert(8,f'UNSPLASH URLS INCLUDING CSS: {len(urls)}')
+          report.append('EXTERNAL PHOTOS: '+('PASS' if not bad_remote else 'FAIL'))
+          report.append('DELETED LEGACY: '+(', '.join(deleted) if deleted else 'none'))
+          report.append('CHANGED FILES: '+(', '.join(dict.fromkeys(changed)) if changed else 'none'))
           report.append('AUDIT UTC: '+datetime.datetime.now(datetime.timezone.utc).isoformat())
           (root/'AUDIT.txt').write_text('\n'.join(report)+'\n',encoding='utf-8')
-          if local_missing: raise SystemExit('Broken local references remain; see AUDIT.txt')
-          if fallback_count != len(html_files): raise SystemExit('Image fallback missing on one or more pages')
+
+          problems=[missing,duplicate_ids,bad_anchors,buttons_without_type,bad_remote]
+          if any(problems) or not noindex_ok or not lang_links_ok or not no_implicit_globals or fallback_ok!=5:
+            raise SystemExit('Deep audit failed; see hamagiku-demo/AUDIT.txt')
           PY
 
       - name: Check JavaScript syntax
@@ -146,14 +191,14 @@ jobs:
           done
           rm -rf .audit-js
 
-      - name: Commit repaired demo
+      - name: Commit repairs
         run: |
           git config user.name "Hamagiku Audit Bot"
           git config user.email "actions@users.noreply.github.com"
-          git add hamagiku-demo
+          git add -A hamagiku-demo hamagiku-showcase
           if git diff --cached --quiet; then
             echo "No content changes needed"
           else
-            git commit -m "Harden Hamagiku image fallbacks [skip ci]"
+            git commit -m "Complete Hamagiku deep audit [skip ci]"
             git push origin HEAD:gh-pages
           fi
